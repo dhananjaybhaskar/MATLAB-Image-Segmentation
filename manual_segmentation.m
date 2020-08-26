@@ -69,6 +69,10 @@ while (finished_segmentation == false)
         end
         
         mkdir(output_folder)
+        
+        fig2 = figure(2);
+        imshow(nd2_img);
+        hold on
 
         output_fileID = fopen(strcat(output_folder, filesep, 'measurements.csv'), 'w');
         fprintf(output_fileID, 'Cell_ID, Centroid_X, Centroid_Y, Area_Px\n');
@@ -84,9 +88,10 @@ while (finished_segmentation == false)
         centroid_coords = measurements.Centroid;
         fprintf(output_fileID, '%d, %f, %f, %d\n', cell_id, centroid_coords(1), centroid_coords(2), measurements.Area);
         
-        output_img(:,:,1) = output_img(:,:,1) + 128*bin_mask;
-        output_img(:,:,2) = output_img(:,:,2) + 128*bin_mask;
-        output_img(:,:,3) = output_img(:,:,3) + 128*bin_mask;
+        cell_bdy_objs = bwboundaries(bin_mask);
+        assert(length(cell_bdy_objs) == 1);
+        cell_bdy = cell_bdy_objs{1};
+        plot(cell_bdy(:,2), cell_bdy(:,1), 'w', 'LineWidth', 2)
 
         if num_segmentations >= 2
             for i = 2:num_segmentations
@@ -102,20 +107,17 @@ while (finished_segmentation == false)
                 centroid_coords = [centroid_coords; cell_centroid];
                 fprintf(output_fileID, '%d, %f, %f, %d\n', cell_id, centroid_coords(1), centroid_coords(2), measurements.Area);
                 
-                output_img(:,:,1) = output_img(:,:,1) + 128*bin_mask;
-                output_img(:,:,2) = output_img(:,:,2) + 128*bin_mask;
-                output_img(:,:,3) = output_img(:,:,3) + 128*bin_mask;
+                cell_bdy_objs = bwboundaries(bin_mask);
+                assert(length(cell_bdy_objs) == 1);
+                cell_bdy = cell_bdy_objs{1};
+                plot(cell_bdy(:,2), cell_bdy(:,1), 'w', 'LineWidth', 2)
 
             end
         end
 
-        fig2 = figure(2);
-        img_h = imshow(output_img);
-        hold on
-        set(img_h, 'AlphaData', nd2_img);
         scatter(centroid_coords(:,1), centroid_coords(:,2), 'r', 'filled')
         txt_disp_offset = 10;
-        text(centroid_coords(:,1)+txt_disp_offset, centroid_coords(:,2)-txt_disp_offset, annotations, 'Color', 'cyan', 'FontSize', 15)
+        text(centroid_coords(:,1)+txt_disp_offset, centroid_coords(:,2)-txt_disp_offset, annotations, 'Color', 'magenta', 'FontSize', 16)
         hold off
         saveas(gcf, strcat(output_folder, filesep, 'annotated_mask.png'));
 
