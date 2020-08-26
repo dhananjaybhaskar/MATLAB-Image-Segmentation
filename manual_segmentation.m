@@ -1,6 +1,6 @@
 %
 % Description: Segment phase-contrast microscopy images manually
-% Last Modified: Aug 12, 2020
+% Last Modified: Aug 25, 2020
 % Author: Dhananjay Bhaskar <dhananjay_bhaskar@brown.edu>
 % Notes:
 % Microscopy file I/O provided by Bio-Formats toolbox
@@ -8,10 +8,15 @@
 % Tested on MATLAB R2017b
 %
 
+% Requested features (TODO):
+% Automatically place vertex points for editing after freehand drawing
+% Propagation of segmented boundaries in image stacks
+
 close all; clear all; clc;
 
 global num_segmentations
 global stored_masks
+global imfreehand_handles
 
 addpath('bfmatlab');
 
@@ -105,20 +110,18 @@ while (finished_segmentation == false)
         end
 
         fig2 = figure(2);
-        imshow(output_img)
+        img_h = imshow(output_img);
         hold on
+        set(img_h, 'AlphaData', nd2_img);
         scatter(centroid_coords(:,1), centroid_coords(:,2), 'r', 'filled')
         txt_disp_offset = 10;
-        text(centroid_coords(:,1)+txt_disp_offset, centroid_coords(:,2)-txt_disp_offset, annotations, 'Color', 'blue', 'FontSize', 14)
+        text(centroid_coords(:,1)+txt_disp_offset, centroid_coords(:,2)-txt_disp_offset, annotations, 'Color', 'cyan', 'FontSize', 15)
         hold off
         saveas(gcf, strcat(output_folder, filesep, 'annotated_mask.png'));
 
     end
     
     usr_response = questdlg('Would you like to open another image?', 'Segmentation Complete', 'Yes', 'No', 'No');
-    
-    %usr_response = uiconfirm(fig2, 'Would you like to open another image?', 'Segmentation Complete',...
-    %                     'Options', {'Yes','No'}, 'DefaultOption', 1, 'CancelOption', 2);
     
     switch usr_response
         case 'No'
@@ -127,6 +130,8 @@ while (finished_segmentation == false)
         case 'Yes'
             close(fig2);
     end
+    
+    fclose(output_fileID);
     
 end
 
@@ -225,7 +230,7 @@ function get_segmentations
     
     zoomparams.dispbox2 = uicontrol('style', 'text', 'backgroundcolor', [0.9375 0.9375 0.9375],...
         'foregroundcolor', 'k', 'units', 'normalized',...
-        'position', [0.065 0.001 0.32 0.04], 'fontsize', 14, 'string', msgstr,...
+        'position', [0.065 0.0005 0.32 0.04], 'fontsize', 14, 'string', msgstr,...
         'horizontalalignment', 'l');
     
     setappdata(gcf, 'zoomparams', zoomparams);
@@ -293,20 +298,20 @@ function zoomfcn
     if x >= zoomparams.oldxlim(1) && x <= zoomparams.oldxlim(2) && ...
             y >= zoomparams.oldylim(1) && y <= zoomparams.oldylim(2) && ...
         z >= zoomparams.oldzlim(1) && z <= zoomparams.oldzlim(2)
-        if strcmp(zoomparams.objtype,'surface')
-            set(zoomparams.dispbox2,'string',sprintf('Cursor X = %3.2f  Cursor Y = %3.2f Z = %3.2f',x,y,z));
-            set(zoomparams.currax,'xlim',[x1 x2],'ylim',[y1 y2],'zlim',[z1 z2]);
+        if strcmp(zoomparams.objtype, 'surface')
+            set(zoomparams.dispbox2, 'string', sprintf('Cursor X = %3.2f  Cursor Y = %3.2f Z = %3.2f', x, y, z));
+            set(zoomparams.currax, 'xlim', [x1 x2], 'ylim', [y1 y2], 'zlim', [z1 z2]);
         else
-            set(zoomparams.dispbox2,'string',sprintf('Cursor X = %3.2f  Cursor Y = %3.2f',x,y));
-            set(zoomparams.currax,'xlim',[x1 x2],'ylim',[y1 y2]);
+            set(zoomparams.dispbox2, 'string', sprintf('Cursor X = %3.2f  Cursor Y = %3.2f', x, y));
+            set(zoomparams.currax, 'xlim', [x1 x2], 'ylim', [y1 y2]);
         end
     else
-        if strcmp(zoomparams.objtype,'surface')
-            set(zoomparams.dispbox2,'string',sprintf('Cursor X = %3.f  Cursor Y = %3.0f Z = %3.0f',0,0,0));
-            set(zoomparams.currax,'xlim',zoomparams.oldxlim,'ylim',zoomparams.oldylim,'zlim',zoomparams.oldzlim);
+        if strcmp(zoomparams.objtype, 'surface')
+            set(zoomparams.dispbox2, 'string', sprintf('Cursor X = %3.f  Cursor Y = %3.0f Z = %3.0f', 0, 0, 0));
+            set(zoomparams.currax, 'xlim', zoomparams.oldxlim, 'ylim', zoomparams.oldylim, 'zlim', zoomparams.oldzlim);
         else
-            set(zoomparams.dispbox2,'string',sprintf('Cursor X = %3.0f  Cursor Y = %3.0f',0,0));
-            set(zoomparams.currax,'xlim',zoomparams.oldxlim,'ylim',zoomparams.oldylim);
+            set(zoomparams.dispbox2, 'string', sprintf('Cursor X = %3.0f  Cursor Y = %3.0f', 0, 0));
+            set(zoomparams.currax, 'xlim', zoomparams.oldxlim, 'ylim', zoomparams.oldylim);
         end
     end
     
@@ -318,6 +323,7 @@ function keyfcn
 
     global num_segmentations
     global stored_masks
+    global imfreehand_handles
 
     zoomparams = getappdata(gcf, 'zoomparams');
     key_pressed = get(gcf, 'CurrentKey');
@@ -338,15 +344,29 @@ function keyfcn
             
         case 'd'
             
-            % TODO
-            disp("Implement code to delete previous segmentation.")
+            assert(length(imfreehand_handles) == length(stored_masks));
+            assert(length(stored_masks) == num_segmentations)
+            
+            if ~isempty(imfreehand_handles)
+                
+                bdy =  imfreehand_handles(end);
+                delete(bdy);
+                imfreehand_handles(end) = [];
+                stored_masks(end) = [];
+                num_segmentations = num_segmentations - 1;
+                
+            end
         
         case 'n'
             
+            setappdata(gcf, 'zoomfcnhandle', @() drawnow('update'));
             bdy = imfreehand(zoomparams.currax);
+            bdy.Deletable = false;
             bin_mask = createMask(bdy, zoomparams.currobj);
+            imfreehand_handles = [imfreehand_handles bdy];
             num_segmentations = num_segmentations + 1;
             stored_masks{num_segmentations} = bin_mask;
+            setappdata(gcf, 'zoomfcnhandle', @zoomfcn);
 
     end
     
